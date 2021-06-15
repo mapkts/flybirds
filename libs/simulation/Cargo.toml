@@ -1,0 +1,8 @@
+[package]
+name = "simulation"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+nalgebra = { version = "0.26", features = ["rand-no-std"] }
+rand = "0.8"
