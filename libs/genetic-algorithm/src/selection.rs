@@ -2,14 +2,22 @@ use crate::*;
 use rand::seq::SliceRandom;
 
 pub trait SelectionMethod {
-    fn select<'a, I: Individual>(&self, rng: &mut dyn RngCore, population: &'a [I]) -> &'a I;
+    fn select<'a, I: Individual>(
+        &self,
+        rng: &mut dyn RngCore,
+        population: &'a [I],
+    ) -> &'a I;
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct RouletteWheelSelection;
 
 impl SelectionMethod for RouletteWheelSelection {
-    fn select<'a, I: Individual>(&self, rng: &mut dyn RngCore, population: &'a [I]) -> &'a I {
+    fn select<'a, I: Individual>(
+        &self,
+        rng: &mut dyn RngCore,
+        population: &'a [I],
+    ) -> &'a I {
         assert!(!population.is_empty());
 
         population
@@ -49,7 +57,9 @@ mod tests {
         fn chromosome(&self) -> &Chromosome {
             match self {
                 Self::WithChromosome { chromosome } => chromosome,
-                Self::WithFitness { .. } => panic!("not supported for TestIndividual::WithFitness"),
+                Self::WithFitness { .. } => {
+                    panic!("not supported for TestIndividual::WithFitness")
+                }
             }
         }
 
@@ -76,12 +86,14 @@ mod tests {
         let actual_histogram = (0..1000)
             .map(|_| method.select(&mut rng, &population))
             .fold(BTreeMap::default(), |mut histogram, individual| {
-                *histogram.entry(individual.fitness() as i32).or_default() += 1;
+                *histogram.entry(individual.fitness() as i32).or_default() +=
+                    1;
 
                 histogram
             });
 
-        let expected_histogram = BTreeMap::from_iter(vec![(1, 102), (2, 197), (3, 302), (4, 399)]);
+        let expected_histogram =
+            BTreeMap::from_iter(vec![(1, 102), (2, 197), (3, 302), (4, 399)]);
         assert_eq!(actual_histogram, expected_histogram);
     }
 }

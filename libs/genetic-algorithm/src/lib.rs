@@ -3,13 +3,14 @@ mod crossover;
 mod mutation;
 mod selection;
 
-use chromosome::*;
-use crossover::*;
-use mutation::*;
-use selection::*;
+pub use chromosome::*;
+pub use crossover::*;
+pub use mutation::*;
+pub use selection::*;
 
 use rand::prelude::*;
 
+#[derive(Debug)]
 pub struct GeneticAlgorithm<S, C, M> {
     selection_method: S,
     crossover_method: C,
@@ -22,25 +23,32 @@ where
     C: CrossoverMethod,
     M: MutationMethod,
 {
-    pub fn new(selection_method: S, crossover_method: C, mutation_method: M) -> Self {
-        Self {
-            selection_method,
-            crossover_method,
-            mutation_method,
-        }
+    pub fn new(
+        selection_method: S,
+        crossover_method: C,
+        mutation_method: M,
+    ) -> Self {
+        Self { selection_method, crossover_method, mutation_method }
     }
 
-    pub fn evolve<'a, I: Individual>(&self, rng: &mut dyn RngCore, population: &'a [I]) -> Vec<I> {
+    pub fn evolve<'a, I: Individual>(
+        &self,
+        rng: &mut dyn RngCore,
+        population: &'a [I],
+    ) -> Vec<I> {
         assert!(!population.is_empty());
 
         (0..population.len())
             .map(|_| {
                 // selection
-                let parent_a = self.selection_method.select(rng, population).chromosome();
-                let parent_b = self.selection_method.select(rng, population).chromosome();
+                let parent_a =
+                    self.selection_method.select(rng, population).chromosome();
+                let parent_b =
+                    self.selection_method.select(rng, population).chromosome();
 
                 // crossover
-                let mut child = self.crossover_method.crossover(rng, parent_a, parent_b);
+                let mut child =
+                    self.crossover_method.crossover(rng, parent_a, parent_b);
 
                 // mutation
                 self.mutation_method.mutate(rng, &mut child);

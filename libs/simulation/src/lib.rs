@@ -1,18 +1,65 @@
+#![feature(crate_visibility_modifier)]
+
+mod animal;
+mod animal_individual;
+mod eye;
+mod food;
+mod world;
+
+pub use animal::*;
+pub use animal_individual::*;
+pub use eye::*;
+pub use food::*;
+pub use world::*;
+
+use genetic_algorithm as ga;
 use nalgebra as na;
+use neural_network as nn;
 use rand::{Rng, RngCore};
-use std::f32::consts::*;
+use std::f32::consts::FRAC_PI_2;
+
+/// Minimum speed of a bird.
+///
+/// Keeping it above zero prevents birds from getting stuck in one place.
+const SPEED_MIN: f32 = 0.001;
+
+/// Maximum speed of a bird.
+///
+/// Keeping it "sane" prevents birds from accelerating up to infinity.
+const SPEED_MAX: f32 = 0.005;
+
+/// Speed acceleration.
+///
+/// Determines how much the brain can affect bird's speed during one step.
+const SPEED_ACCELRATION: f32 = 0.2;
+
+/// Rotation acceleration.
+const ROTATION_ACCELRATION: f32 = FRAC_PI_2;
+
+/// How much steps have to occur before we push data into the genetic algorithm.
+const GENERATION_LENGTH: usize = 2500;
 
 #[derive(Debug)]
 pub struct Simulation {
     world: World,
+    ga: ga::GeneticAlgorithm<
+        ga::RouletteWheelSelection,
+        ga::UniformCrossover,
+        ga::GaussianMutation,
+    >,
+    age: usize,
 }
 
 impl Simulation {
     pub fn random(rng: &mut dyn RngCore) -> Self {
-        Self {
-            // For simplicity, we just hardcode the `num_animals` and `num_foods` for now.
-            world: World::random(rng, 40, 60),
-        }
+        let world = World::random(rng, 40, 60);
+        let ga = ga::GeneticAlgorithm::new(
+            ga::RouletteWheelSelection::default(),
+            ga::UniformCrossover::default(),
+            ga::GaussianMutation::new(0.01, 0.3),
+        );
+
+        Self { world, ga, age: 0 }
     }
 
     pub fn world(&self) -> &World {
@@ -21,12 +68,46 @@ impl Simulation {
 
     pub fn step(&mut self, rng: &mut dyn RngCore) {
         self.process_collisions(rng);
+        self.process_brains();
         self.process_movements();
+
+        self.age += 1;
+
+        if self.age > GENERATION_LENGTH {
+            self.evolve(rng);
+        }
+    }
+
+    fn evolve(&mut self, rng: &mut dyn RngCore) {
+        self.age = 0;
+
+        // step 1: prepare birds to be sent into the genetic algorithm.
+        let current_population: Vec<_> = self
+            .world
+            .animals
+            .iter()
+            .map(AnimalIndividual::from_animal)
+            .collect();
+
+        // step 2: evolve birds.
+        let evolved_population = self.ga.evolve(rng, &current_population);
+
+        // step 3: bring birds back from the genetic algorithm.
+        self.world.animals = evolved_population
+            .into_iter()
+            .map(|individual| individual.into_animal(rng))
+            .collect();
+
+        // step 4: restart foods.
+        for food in &mut self.world.foods {
+            food.position = rng.gen();
+        }
     }
 
     fn process_movements(&mut self) {
         for animal in &mut self.world.animals {
-            animal.position += animal.rotation * na::Vector2::new(animal.speed, 0.0);
+            animal.position +=
+                animal.rotation * na::Vector2::new(animal.speed, 0.0);
 
             animal.position.x = na::wrap(animal.position.x, 0.0, 1.0);
             animal.position.y = na::wrap(animal.position.y, 0.0, 1.0);
@@ -36,129 +117,37 @@ impl Simulation {
     fn process_collisions(&mut self, rng: &mut dyn RngCore) {
         for animal in &mut self.world.animals {
             for food in &mut self.world.foods {
-                let distance = na::distance(&animal.position(), &food.position());
+                let distance =
+                    na::distance(&animal.position(), &food.position());
 
                 if distance <= 0.01 {
+                    animal.satiation += 1;
                     food.position = rng.gen();
                 }
             }
         }
     }
-}
 
-#[derive(Debug)]
-pub struct World {
-    animals: Vec<Animal>,
-    foods: Vec<Food>,
-}
+    fn process_brains(&mut self) {
+        for animal in &mut self.world.animals {
+            let vision = animal.eye.process_vision(
+                animal.position,
+                animal.rotation,
+                &self.world.foods,
+            );
 
-impl World {
-    pub fn random(rng: &mut dyn RngCore, num_animals: u32, num_foods: u32) -> Self {
-        let animals = (0..num_animals).map(|_| Animal::random(rng)).collect();
-        let foods = (0..num_foods).map(|_| Food::random(rng)).collect();
+            let response = animal.brain.propagate(vision);
 
-        Self { animals, foods }
-    }
+            let speed =
+                response[0].clamp(-SPEED_ACCELRATION, SPEED_ACCELRATION);
 
-    pub fn animals(&self) -> &[Animal] {
-        &self.animals
-    }
+            let rotation =
+                response[1].clamp(-ROTATION_ACCELRATION, ROTATION_ACCELRATION);
 
-    pub fn foods(&self) -> &[Food] {
-        &self.foods
-    }
-}
+            animal.speed = (animal.speed + speed).clamp(SPEED_MIN, SPEED_MAX);
 
-#[derive(Debug)]
-pub struct Animal {
-    position: na::Point2<f32>,
-    rotation: na::Rotation2<f32>,
-    speed: f32,
-}
-
-impl Animal {
-    pub fn random(rng: &mut dyn RngCore) -> Self {
-        Self {
-            position: rng.gen(),
-            rotation: rng.gen(),
-            speed: 0.002,
+            animal.rotation =
+                na::Rotation2::new(animal.rotation.angle() + rotation);
         }
-    }
-
-    pub fn position(&self) -> na::Point2<f32> {
-        self.position
-    }
-
-    pub fn rotation(&self) -> na::Rotation2<f32> {
-        self.rotation
-    }
-
-    pub fn speed(&self) -> f32 {
-        self.speed
-    }
-}
-
-#[derive(Debug)]
-pub struct Food {
-    position: na::Point2<f32>,
-}
-
-impl Food {
-    pub fn random(rng: &mut dyn RngCore) -> Self {
-        Self {
-            position: rng.gen(),
-        }
-    }
-
-    pub fn position(&self) -> na::Point2<f32> {
-        self.position
-    }
-}
-
-#[derive(Debug)]
-pub struct Eye {
-    fov_range: f32,
-    fov_angle: f32,
-    cells: usize,
-}
-
-impl Eye {
-    // Range of field of view.
-    const FOV_RANGE: f32 = 0.25;
-
-    // Angle of field of view.
-    const FOV_ANGLE: f32 = PI + FRAC_PI_4;
-
-    // Photoreceptors in a single eye.
-    const CELLS: usize = 9;
-
-    pub fn new(fov_range: f32, fov_angle: f32, cells: usize) -> Self {
-        assert!(fov_range > 0. && fov_angle > 0. && cells > 0);
-
-        Self {
-            fov_range,
-            fov_angle,
-            cells,
-        }
-    }
-
-    // pub fn process_vision() -> Vec<f32> {
-    //     for food in foods {
-    //         let vec = food.position - position;
-    //         let dist = vec.norm();
-    //         if dist >= self.fov_range {
-    //             continue;
-    //         }
-    //     }
-    // }
-
-    pub fn cells(&self) -> usize {
-        self.cells
-    }
-}
-
-impl Default for Eye {
-    fn default() -> Self {
-        Self::new(Self::FOV_RANGE, Self::FOV_ANGLE, Self::CELLS)
     }
 }

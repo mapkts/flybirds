@@ -9,7 +9,7 @@ pub trait CrossoverMethod {
     ) -> Chromosome;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct UniformCrossover;
 
 impl UniformCrossover {
@@ -48,13 +48,16 @@ mod tests {
 
         let parent_a: Chromosome = (1..=100).map(|n| n as f32).collect();
         let parent_b: Chromosome = (1..=100).map(|n| -n as f32).collect();
-        let child = UniformCrossover::new().crossover(&mut rng, &parent_a, &parent_b);
+        let child =
+            UniformCrossover::new().crossover(&mut rng, &parent_a, &parent_b);
 
         // Number of genes different between `child` and `parent_a`
-        let diff_a = child.iter().zip(parent_a).filter(|(c, p)| *c != p).count();
+        let diff_a =
+            child.iter().zip(parent_a).filter(|(c, p)| *c != p).count();
 
         // Number of genes different between `child` and `parent_b`
-        let diff_b = child.iter().zip(parent_b).filter(|(c, p)| *c != p).count();
+        let diff_b =
+            child.iter().zip(parent_b).filter(|(c, p)| *c != p).count();
 
         assert_eq!(diff_a, 49);
         assert_eq!(diff_b, 51);
